@@ -74,7 +74,7 @@ const tones = [
         <div class="pane">
           <div class="pane-top">
             <span class="pane-title">Draft</span>
-            <span class="count" id="count">0</span>
+            <span class="count" id="count">0 / 12,000 characters</span>
           </div>
           <textarea id="input" spellcheck="false" placeholder="Type or paste here. Don't worry about mistakes."></textarea>
         </div>
@@ -161,8 +161,13 @@ const tones = [
         });
       });
 
-      input.addEventListener('input', () => { count.textContent = input.value.length; });
-      $('#clear').addEventListener('click', () => { input.value = ''; count.textContent = '0'; input.focus(); });
+      const MAX = 12000;
+      function setCount(n) {
+        count.textContent = n.toLocaleString() + ' / 12,000 characters';
+        count.classList.toggle('over', n > MAX);
+      }
+      input.addEventListener('input', () => setCount(input.value.length));
+      $('#clear').addEventListener('click', () => { input.value = ''; setCount(0); input.focus(); });
 
       function setBusy(on) {
         go.disabled = on;
@@ -248,7 +253,7 @@ const tones = [
           card.append(tag, body);
           card.addEventListener('click', () => {
             input.value = it.input;
-            count.textContent = it.input.length;
+            setCount(it.input.length);
             applyDialect(it.dialect);
             applyTone(it.tone);
             showOutput(it.output);
@@ -271,7 +276,8 @@ const tones = [
         --muted: #807b72;
         --faint: #a8a299;
         --line: #e4e0d6;
-        --line-2: #d8d3c7;
+        --line-2: #cdc7ba;
+        --text-2: #524e47;
         --accent: #2f6b54;
         --accent-soft: #e7efe9;
         --danger: #b1442f;
@@ -284,7 +290,8 @@ const tones = [
         --muted: #9b958a;
         --faint: #6c675e;
         --line: #2c2925;
-        --line-2: #3a3631;
+        --line-2: #46413a;
+        --text-2: #c4beb3;
         --accent: #6dbb98;
         --accent-soft: #233029;
         --danger: #e08568;
@@ -342,7 +349,7 @@ const tones = [
 
       .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line-2); border-radius: 10px; padding: 3px; box-shadow: var(--shadow); }
       .seg-btn {
-        border: 0; background: transparent; color: var(--muted); cursor: pointer;
+        border: 0; background: transparent; color: var(--text-2); cursor: pointer;
         font: inherit; font-size: .88rem; font-weight: 500; padding: .4rem 1rem; border-radius: 7px;
         transition: color .15s, background .15s;
       }
@@ -350,11 +357,11 @@ const tones = [
 
       .pills { display: flex; flex-wrap: wrap; gap: .4rem; }
       .pill {
-        border: 1px solid var(--line-2); background: var(--surface); color: var(--muted);
-        cursor: pointer; font: inherit; font-size: .86rem; padding: .42rem .9rem; border-radius: 999px;
+        border: 1px solid var(--line-2); background: var(--surface); color: var(--text-2);
+        cursor: pointer; font: inherit; font-size: .86rem; font-weight: 500; padding: .42rem .9rem; border-radius: 999px;
         transition: all .15s;
       }
-      .pill:hover { border-color: var(--faint); color: var(--ink); }
+      .pill:hover { border-color: var(--muted); color: var(--ink); }
       .pill.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
 
       .editor { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
@@ -369,7 +376,8 @@ const tones = [
         padding: .85rem 1.1rem; border-bottom: 1px solid var(--line);
       }
       .pane-title { font-size: .74rem; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); font-weight: 500; }
-      .count { font-size: .78rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+      .count { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+      .count.over { color: var(--danger); font-weight: 500; }
 
       textarea {
         flex: 1; resize: none; border: 0; background: transparent; color: var(--ink);
@@ -432,7 +440,8 @@ const tones = [
 
       .foot {
         display: flex; align-items: center; justify-content: center; gap: .6rem;
-        color: var(--faint); font-size: .8rem; padding: 2.5rem 1rem;
+        color: var(--faint); font-size: .8rem;
+        padding: 2.5rem 1rem calc(3.5rem + env(safe-area-inset-bottom, 0px));
         border-top: 1px solid var(--line); max-width: 1080px; margin: 2rem auto 0;
       }
       .foot .sep { opacity: .5; }
