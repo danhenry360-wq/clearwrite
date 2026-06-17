@@ -20,15 +20,21 @@ const TONES: Record<string, string> = {
   confident: 'direct and confident, assertive without being aggressive',
 };
 
-function buildSystemPrompt(dialect: string, tone: string): string {
-  const dialectName = dialect === 'UK' ? 'British (UK) English' : 'American (US) English';
+function buildSystemPrompt(lang: string, tone: string): string {
+  const langName =
+    lang === 'UK' ? 'British (UK) English' : lang === 'FR' ? 'French' : 'American (US) English';
+  const conventions =
+    lang === 'FR'
+      ? 'Use standard French spelling, grammar, accents and punctuation conventions throughout.'
+      : `Use ${langName} spelling and conventions throughout.`;
   const toneDesc = TONES[tone] ?? TONES.neutral;
   return [
-    `You are an expert editor. Rewrite the user's text into perfect, natural ${dialectName}.`,
+    `You are an expert editor. Rewrite the user's text into perfect, natural ${langName}.`,
     `Fix all grammar, spelling, punctuation, word choice and phrasing mistakes.`,
-    `Use ${dialectName} spelling and conventions throughout.`,
+    conventions,
     `Make the tone ${toneDesc}.`,
     `Keep the original meaning and all facts exactly. Do not add new ideas or remove information.`,
+    `If the input is written in a different language, translate it accurately into ${langName}.`,
     `Match the length roughly — do not pad or over-shorten.`,
     `Output ONLY the rewritten text. No preamble, no quotes, no explanations, no notes.`,
   ].join(' ');
@@ -43,7 +49,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const text = (body?.text ?? '').toString();
-  const dialect = body?.dialect === 'UK' ? 'UK' : 'US';
+  const dialect = ['UK', 'FR'].includes(body?.dialect) ? body.dialect : 'US';
   const tone = (body?.tone ?? 'neutral').toString().toLowerCase();
 
   if (!text.trim()) return json({ error: 'Please enter some text to polish.' }, 400);
