@@ -1,0 +1,358 @@
+---
+const tones = [
+  { id: 'neutral', label: 'Neutral' },
+  { id: 'professional', label: 'Professional' },
+  { id: 'formal', label: 'Formal' },
+  { id: 'friendly', label: 'Friendly' },
+  { id: 'casual', label: 'Casual' },
+  { id: 'confident', label: 'Confident' },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ClearWrite — Perfect your English</title>
+    <meta name="description" content="Turn rough text into clean, correct UK or US English in any tone." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✍️</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="bg-glow"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">✍️</span>
+        <span class="brand-name">Clear<span class="accent">Write</span></span>
+      </div>
+      <p class="tagline">Rough text in &rarr; flawless English out</p>
+    </header>
+
+    <main class="wrap">
+      <section class="controls">
+        <div class="seg" id="dialect" role="group" aria-label="English variant">
+          <button type="button" class="seg-btn active" data-val="US">🇺🇸 US English</button>
+          <button type="button" class="seg-btn" data-val="UK">🇬🇧 UK English</button>
+        </div>
+
+        <div class="tone-wrap">
+          <label for="tone">Tone</label>
+          <select id="tone">
+            {tones.map((t) => <option value={t.id}>{t.label}</option>)}
+          </select>
+        </div>
+      </section>
+
+      <section class="panels">
+        <div class="panel">
+          <div class="panel-head">
+            <span>Your text</span>
+            <span class="count" id="count">0</span>
+          </div>
+          <textarea id="input" placeholder="Paste or type your text here… mistakes are fine, that's the point."></textarea>
+          <div class="panel-foot">
+            <button class="ghost" id="clear" type="button">Clear</button>
+            <button class="primary" id="go" type="button">
+              <span class="go-label">Polish text</span>
+              <span class="spinner" hidden></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <span>Polished</span>
+            <button class="copy" id="copy" type="button" hidden>Copy</button>
+          </div>
+          <div id="output" class="output" aria-live="polite">
+            <p class="placeholder">Your corrected text will appear here.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="history-section">
+        <div class="history-head">
+          <h2>History</h2>
+          <button class="ghost small" id="clear-history" type="button" hidden>Clear history</button>
+        </div>
+        <div id="history" class="history"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Powered by Claude Haiku 4.5 · History stays in your browser
+    </footer>
+
+    <script>
+      const $ = (s) => document.querySelector(s);
+      const input = $('#input');
+      const output = $('#output');
+      const go = $('#go');
+      const copyBtn = $('#copy');
+      const count = $('#count');
+      const toneSel = $('#tone');
+      const historyEl = $('#history');
+      const clearHistoryBtn = $('#clear-history');
+      const KEY = 'clearwrite.history';
+      let dialect = 'US';
+
+      // dialect toggle
+      document.querySelectorAll('#dialect .seg-btn').forEach((b) => {
+        b.addEventListener('click', () => {
+          document.querySelectorAll('#dialect .seg-btn').forEach((x) => x.classList.remove('active'));
+          b.classList.add('active');
+          dialect = b.dataset.val;
+        });
+      });
+
+      input.addEventListener('input', () => { count.textContent = input.value.length; });
+      $('#clear').addEventListener('click', () => { input.value=''; count.textContent='0'; input.focus(); });
+
+      function setLoading(on) {
+        go.disabled = on;
+        go.querySelector('.go-label').textContent = on ? 'Polishing…' : 'Polish text';
+        go.querySelector('.spinner').hidden = !on;
+      }
+
+      function showOutput(textVal) {
+        output.innerHTML = '';
+        const p = document.createElement('p');
+        p.className = 'result-text';
+        p.textContent = textVal;
+        output.appendChild(p);
+        copyBtn.hidden = false;
+      }
+
+      async function polish() {
+        const text = input.value.trim();
+        if (!text) { input.focus(); return; }
+        setLoading(true);
+        copyBtn.hidden = true;
+        try {
+          const res = await fetch('/api/rewrite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, dialect, tone: toneSel.value }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+          showOutput(data.result);
+          saveHistory({ input: text, output: data.result, dialect, tone: toneSel.value, ts: Date.now() });
+        } catch (e) {
+          output.innerHTML = '<p class="error">' + (e.message || 'Failed.') + '</p>';
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      go.addEventListener('click', polish);
+      input.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') polish();
+      });
+
+      copyBtn.addEventListener('click', async () => {
+        const t = output.querySelector('.result-text');
+        if (!t) return;
+        await navigator.clipboard.writeText(t.textContent);
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
+      });
+
+      // history (localStorage)
+      function loadHistory() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
+      function saveHistory(item) {
+        const list = loadHistory();
+        list.unshift(item);
+        localStorage.setItem(KEY, JSON.stringify(list.slice(0, 50)));
+        renderHistory();
+      }
+      function renderHistory() {
+        const list = loadHistory();
+        clearHistoryBtn.hidden = list.length === 0;
+        if (!list.length) { historyEl.innerHTML = '<p class="placeholder small">No history yet.</p>'; return; }
+        historyEl.innerHTML = '';
+        list.forEach((it, i) => {
+          const card = document.createElement('button');
+          card.className = 'hist-card';
+          card.type = 'button';
+          const when = new Date(it.ts).toLocaleString();
+          card.innerHTML =
+            '<div class="hist-meta"><span class="badge">' + it.dialect + '</span>' +
+            '<span class="badge soft">' + it.tone + '</span>' +
+            '<span class="hist-time">' + when + '</span></div>' +
+            '<div class="hist-out"></div>';
+          card.querySelector('.hist-out').textContent = it.output;
+          card.addEventListener('click', () => {
+            input.value = it.input;
+            count.textContent = it.input.length;
+            dialect = it.dialect;
+            document.querySelectorAll('#dialect .seg-btn').forEach((x) =>
+              x.classList.toggle('active', x.dataset.val === it.dialect));
+            toneSel.value = it.tone;
+            showOutput(it.output);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+          historyEl.appendChild(card);
+        });
+      }
+      clearHistoryBtn.addEventListener('click', () => {
+        if (confirm('Clear all history?')) { localStorage.removeItem(KEY); renderHistory(); }
+      });
+      renderHistory();
+    </script>
+
+    <style is:global>
+      :root {
+        --bg: #0a0b0f;
+        --panel: #14161d;
+        --panel-2: #1b1e27;
+        --line: #262a36;
+        --text: #e7e9ee;
+        --muted: #8b90a0;
+        --accent: #00ffe5;
+        --accent-2: #6c8cff;
+        --danger: #ff6b6b;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        font-family: 'Inter', system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        position: relative;
+        overflow-x: hidden;
+      }
+      .bg-glow {
+        position: fixed; inset: 0; z-index: 0; pointer-events: none;
+        background:
+          radial-gradient(600px 400px at 15% -5%, rgba(0,255,229,.10), transparent 60%),
+          radial-gradient(700px 500px at 100% 0%, rgba(108,140,255,.10), transparent 55%);
+      }
+      .topbar, .wrap, .footer { position: relative; z-index: 1; }
+      .topbar {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 1rem; flex-wrap: wrap;
+        padding: 1.4rem clamp(1rem, 4vw, 3rem);
+        border-bottom: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: .6rem; }
+      .brand-mark { font-size: 1.4rem; }
+      .brand-name { font-weight: 700; font-size: 1.3rem; letter-spacing: -.02em; }
+      .accent {
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .tagline { margin: 0; color: var(--muted); font-size: .9rem; }
+
+      .wrap { max-width: 1100px; margin: 0 auto; padding: clamp(1rem, 3vw, 2rem); }
+
+      .controls {
+        display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+        margin-bottom: 1.2rem;
+      }
+      .seg {
+        display: inline-flex; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 12px; padding: 4px;
+      }
+      .seg-btn {
+        border: 0; background: transparent; color: var(--muted);
+        padding: .5rem .9rem; border-radius: 9px; cursor: pointer; font: inherit;
+        font-size: .9rem; transition: all .15s ease;
+      }
+      .seg-btn.active { background: var(--panel-2); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+      .tone-wrap { display: flex; align-items: center; gap: .5rem; }
+      .tone-wrap label { color: var(--muted); font-size: .9rem; }
+      select {
+        background: var(--panel); color: var(--text); border: 1px solid var(--line);
+        border-radius: 10px; padding: .55rem .8rem; font: inherit; font-size: .9rem; cursor: pointer;
+      }
+      select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+      .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      @media (max-width: 760px) { .panels { grid-template-columns: 1fr; } }
+
+      .panel {
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 16px; display: flex; flex-direction: column; min-height: 320px; overflow: hidden;
+      }
+      .panel-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: .8rem 1rem; border-bottom: 1px solid var(--line);
+        font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
+      }
+      .count { font-variant-numeric: tabular-nums; }
+      textarea {
+        flex: 1; resize: none; border: 0; background: transparent; color: var(--text);
+        padding: 1rem; font: inherit; font-size: 1rem; line-height: 1.6;
+      }
+      .output { flex: 1; padding: 1rem; font-size: 1rem; line-height: 1.6; overflow-y: auto; }
+      .result-text { margin: 0; white-space: pre-wrap; }
+      .placeholder { color: var(--muted); margin: 0; }
+      .placeholder.small { font-size: .85rem; }
+      .error { color: var(--danger); margin: 0; }
+
+      .panel-foot {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: .6rem; padding: .8rem 1rem; border-top: 1px solid var(--line);
+      }
+      button.primary {
+        display: inline-flex; align-items: center; gap: .5rem;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        color: #061015; font-weight: 600; border: 0; border-radius: 10px;
+        padding: .6rem 1.2rem; cursor: pointer; font: inherit; font-weight: 600;
+        transition: transform .12s ease, opacity .12s ease;
+      }
+      button.primary:hover { transform: translateY(-1px); }
+      button.primary:disabled { opacity: .6; cursor: progress; transform: none; }
+      .ghost {
+        background: transparent; color: var(--muted); border: 1px solid var(--line);
+        border-radius: 10px; padding: .55rem .9rem; cursor: pointer; font: inherit; font-size: .9rem;
+        transition: color .15s ease, border-color .15s ease;
+      }
+      .ghost:hover { color: var(--text); border-color: var(--muted); }
+      .ghost.small { padding: .35rem .7rem; font-size: .8rem; }
+      .copy {
+        background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+        border-radius: 8px; padding: .35rem .8rem; cursor: pointer; font: inherit; font-size: .8rem;
+      }
+      .copy:hover { border-color: var(--accent); }
+      .spinner {
+        width: 14px; height: 14px; border: 2px solid rgba(6,16,21,.35);
+        border-top-color: #061015; border-radius: 50%; animation: spin .7s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      .history-section { margin-top: 2.2rem; }
+      .history-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .8rem; }
+      .history-head h2 { font-size: 1rem; margin: 0; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+      .history { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .8rem; }
+      .hist-card {
+        text-align: left; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 12px; padding: .9rem; cursor: pointer; font: inherit; color: var(--text);
+        transition: border-color .15s ease, transform .12s ease;
+      }
+      .hist-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+      .hist-meta { display: flex; align-items: center; gap: .4rem; margin-bottom: .5rem; flex-wrap: wrap; }
+      .badge {
+        font-size: .7rem; text-transform: uppercase; letter-spacing: .04em;
+        background: rgba(0,255,229,.12); color: var(--accent);
+        border-radius: 6px; padding: .1rem .45rem;
+      }
+      .badge.soft { background: rgba(108,140,255,.12); color: var(--accent-2); }
+      .hist-time { font-size: .72rem; color: var(--muted); margin-left: auto; }
+      .hist-out {
+        font-size: .85rem; color: var(--muted); line-height: 1.5;
+        display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      .footer {
+        text-align: center; color: var(--muted); font-size: .8rem;
+        padding: 2rem 1rem 2.5rem; border-top: 1px solid var(--line); margin-top: 2rem;
+      }
+    </style>
+  </body>
+</html>
