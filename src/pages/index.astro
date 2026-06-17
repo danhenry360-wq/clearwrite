@@ -16,7 +16,7 @@ const tones = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ClearWrite</title>
     <meta name="description" content="Turn rough notes into clean, correct English. Choose UK or US and the tone that fits." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231c1b19'/><text x='16' y='23' font-size='18' text-anchor='middle' font-family='Georgia,serif' fill='%23f7f6f3'>C</text></svg>" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='28' height='28' rx='9' fill='%231c1b19'/><path d='M8.5 13 q2.1 -2.8 4.2 0 t4.2 0 t4.2 0' fill='none' stroke='%23f4f2ec' stroke-width='2' stroke-linecap='round' opacity='0.7'/><path d='M8.5 20.5 H23' fill='none' stroke='%233f8e6f' stroke-width='2.4' stroke-linecap='round'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet" />
@@ -31,7 +31,14 @@ const tones = [
   </head>
   <body>
     <header class="site">
-      <a class="wordmark" href="/">ClearWrite</a>
+      <a class="brand" href="/" aria-label="ClearWrite home">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="2" y="2" width="28" height="28" rx="9" class="mark-bg"/>
+          <path class="mark-wave" d="M8.5 13 q2.1 -2.8 4.2 0 t4.2 0 t4.2 0"/>
+          <path class="mark-line" d="M8.5 20.5 H23"/>
+        </svg>
+        <span class="brand-name">ClearWrite</span>
+      </a>
       <div class="theme" id="theme" role="group" aria-label="Theme">
         <button type="button" class="theme-btn" data-theme-val="light" aria-label="Light" title="Light">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
@@ -74,9 +81,15 @@ const tones = [
         <div class="pane">
           <div class="pane-top">
             <span class="pane-title">Draft</span>
-            <span class="count" id="count">0 / 12,000 characters</span>
+            <div class="top-right">
+              <button class="mic" id="mic" type="button" hidden aria-label="Dictate with your voice" title="Dictate">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+                <span class="mic-pulse"></span>
+              </button>
+              <span class="count" id="count">0 / 12,000 characters</span>
+            </div>
           </div>
-          <textarea id="input" spellcheck="false" placeholder="Type or paste here. Don't worry about mistakes."></textarea>
+          <textarea id="input" spellcheck="false" placeholder="Type, paste, or tap the mic to dictate. Don't worry about mistakes."></textarea>
         </div>
 
         <div class="pane out">
@@ -168,6 +181,46 @@ const tones = [
       }
       input.addEventListener('input', () => setCount(input.value.length));
       $('#clear').addEventListener('click', () => { input.value = ''; setCount(0); input.focus(); });
+
+      // voice dictation (Web Speech API) — only if the browser supports it
+      const micBtn = $('#mic');
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SR) {
+        micBtn.hidden = false;
+        const recog = new SR();
+        recog.continuous = true;
+        recog.interimResults = true;
+        let listening = false;
+        let finalText = '';
+
+        function startDictation() {
+          finalText = input.value ? input.value.trim() + ' ' : '';
+          recog.lang = { US: 'en-US', UK: 'en-GB', FR: 'fr-FR' }[dialect] || 'en-US';
+          try { recog.start(); } catch (e) {}
+          listening = true;
+          micBtn.classList.add('listening');
+          micBtn.setAttribute('aria-label', 'Stop dictation');
+        }
+        function stopDictation() {
+          listening = false;
+          micBtn.classList.remove('listening');
+          micBtn.setAttribute('aria-label', 'Dictate with your voice');
+          try { recog.stop(); } catch (e) {}
+        }
+        recog.onresult = (e) => {
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const r = e.results[i];
+            if (r.isFinal) finalText += r[0].transcript + ' ';
+            else interim += r[0].transcript;
+          }
+          input.value = (finalText + interim).replace(/\s+/g, ' ').trimStart();
+          setCount(input.value.length);
+        };
+        recog.onend = () => { if (listening) { try { recog.start(); } catch (e) {} } };
+        recog.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') stopDictation(); };
+        micBtn.addEventListener('click', () => (listening ? stopDictation() : startDictation()));
+      }
 
       function setBusy(on) {
         go.disabled = on;
@@ -303,6 +356,7 @@ const tones = [
         transition: background-color .25s ease, color .25s ease, border-color .25s ease;
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
       html { -webkit-text-size-adjust: 100%; }
       body {
         margin: 0;
@@ -319,10 +373,14 @@ const tones = [
         padding: 1.5rem clamp(1.2rem, 5vw, 3rem);
         max-width: 1080px; margin: 0 auto;
       }
-      .wordmark {
+      .brand { display: inline-flex; align-items: center; gap: .55rem; text-decoration: none; }
+      .mark { width: 30px; height: 30px; display: block; flex: none; }
+      .mark-bg { fill: var(--ink); }
+      .mark-wave { fill: none; stroke: var(--surface); stroke-width: 2; stroke-linecap: round; opacity: .65; }
+      .mark-line { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; }
+      .brand-name {
         font-family: 'Newsreader', Georgia, serif;
-        font-size: 1.4rem; font-weight: 600; letter-spacing: -.01em;
-        color: var(--ink); text-decoration: none;
+        font-size: 1.4rem; font-weight: 600; letter-spacing: -.01em; color: var(--ink);
       }
       .theme { display: inline-flex; background: var(--surface); border: 1px solid var(--line-2); border-radius: 9px; padding: 3px; box-shadow: var(--shadow); }
       .theme-btn {
@@ -378,6 +436,21 @@ const tones = [
       .pane-title { font-size: .74rem; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); font-weight: 500; }
       .count { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
       .count.over { color: var(--danger); font-weight: 500; }
+      .top-right { display: flex; align-items: center; gap: .7rem; }
+      .mic {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+        border: 1px solid var(--line-2); background: var(--surface); color: var(--muted);
+        transition: color .15s, border-color .15s, background .15s;
+      }
+      .mic:hover { color: var(--ink); border-color: var(--muted); }
+      .mic.listening { color: #fff; background: var(--danger); border-color: var(--danger); }
+      .mic-pulse { position: absolute; inset: -1px; border-radius: 50%; pointer-events: none; }
+      .mic.listening .mic-pulse { animation: ring 1.4s ease-out infinite; box-shadow: 0 0 0 0 var(--danger); }
+      @keyframes ring {
+        0% { box-shadow: 0 0 0 0 rgba(177,68,47,.5); }
+        100% { box-shadow: 0 0 0 9px rgba(177,68,47,0); }
+      }
 
       textarea {
         flex: 1; resize: none; border: 0; background: transparent; color: var(--ink);
