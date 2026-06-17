@@ -2,10 +2,13 @@ import type { APIRoute } from 'astro';
 
 export const prerender = false;
 
-// Primary: Claude Haiku 4.5 (via OpenRouter). Fallback: free Llama model.
+// Free models only, in priority order. If one is rate-limited (429) or errors,
+// the request automatically rolls to the next.
 const MODELS = [
-  'anthropic/claude-haiku-4.5',
+  'google/gemma-4-31b-it:free',
   'meta-llama/llama-3.3-70b-instruct:free',
+  'qwen/qwen3-next-80b-a3b-instruct:free',
+  'google/gemma-4-26b-a4b-it:free',
 ];
 
 const TONES: Record<string, string> = {
