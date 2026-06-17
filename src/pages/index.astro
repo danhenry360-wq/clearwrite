@@ -81,15 +81,13 @@ const tones = [
         <div class="pane">
           <div class="pane-top">
             <span class="pane-title">Draft</span>
-            <div class="top-right">
-              <button class="mic" id="mic" type="button" hidden aria-label="Dictate with your voice" title="Dictate">
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-                <span class="mic-pulse"></span>
-              </button>
-              <span class="count" id="count">0 / 12,000 characters</span>
-            </div>
+            <span class="count" id="count">0 / 12,000 characters</span>
           </div>
           <textarea id="input" spellcheck="false" placeholder="Type, paste, or tap the mic to dictate. Don't worry about mistakes."></textarea>
+          <button class="mic" id="mic" type="button" hidden aria-label="Dictate with your voice" title="Dictate">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            <span class="mic-pulse"></span>
+          </button>
         </div>
 
         <div class="pane out">
@@ -426,6 +424,7 @@ const tones = [
       @media (max-width: 740px) { .editor { grid-template-columns: 1fr; } }
 
       .pane {
+        position: relative;
         background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
         display: flex; flex-direction: column; min-height: 340px; overflow: hidden; box-shadow: var(--shadow);
       }
@@ -436,13 +435,15 @@ const tones = [
       .pane-title { font-size: .74rem; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); font-weight: 500; }
       .count { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
       .count.over { color: var(--danger); font-weight: 500; }
-      .top-right { display: flex; align-items: center; gap: .7rem; }
       .mic {
-        position: relative; display: inline-flex; align-items: center; justify-content: center;
-        width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+        position: absolute; bottom: .9rem; right: .9rem; z-index: 2;
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
         border: 1px solid var(--line-2); background: var(--surface); color: var(--muted);
-        transition: color .15s, border-color .15s, background .15s;
+        box-shadow: var(--shadow);
+        transition: color .15s, border-color .15s, background .15s, transform .12s;
       }
+      .mic:hover { transform: translateY(-1px); }
       .mic:hover { color: var(--ink); border-color: var(--muted); }
       .mic.listening { color: #fff; background: var(--danger); border-color: var(--danger); }
       .mic-pulse { position: absolute; inset: -1px; border-radius: 50%; pointer-events: none; }
@@ -454,7 +455,7 @@ const tones = [
 
       textarea {
         flex: 1; resize: none; border: 0; background: transparent; color: var(--ink);
-        padding: 1.2rem; font: inherit; font-size: 1.02rem; line-height: 1.7;
+        padding: 1.2rem 1.2rem 3.6rem; font: inherit; font-size: 1.02rem; line-height: 1.7;
       }
       textarea::placeholder { color: var(--faint); }
       textarea:focus { outline: none; }
