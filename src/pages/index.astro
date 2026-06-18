@@ -55,7 +55,7 @@ const tones = [
     <main class="wrap">
       <section class="intro">
         <h1>Say exactly what you mean.</h1>
-        <p>Paste rough text below. Get it back clean, correct and natural — in the English and tone you choose.</p>
+        <p>Paste rough text. Get it back clear, correct and natural — in the language and tone you choose.</p>
       </section>
 
       <section class="bar">
@@ -67,12 +67,19 @@ const tones = [
             <button type="button" class="seg-btn" data-val="FR">Français</button>
           </div>
         </div>
-        <div class="field">
+        <div class="field" id="tone-field">
           <span class="field-label">Tone</span>
           <div class="pills" id="tone" role="group" aria-label="Tone">
             {tones.map((t, i) => (
               <button type="button" class:list={["pill", i === 0 && "active"]} data-val={t.id}>{t.label}</button>
             ))}
+          </div>
+        </div>
+        <div class="field">
+          <span class="field-label">Mode</span>
+          <div class="pills" id="mode" role="group" aria-label="Mode">
+            <button type="button" class="pill active" data-val="polish">Polish</button>
+            <button type="button" class="pill" data-val="prompt">Prompt-ready</button>
           </div>
         </div>
       </section>
@@ -83,7 +90,7 @@ const tones = [
             <span class="pane-title">Draft</span>
             <span class="count" id="count">0 / 12,000 characters</span>
           </div>
-          <textarea id="input" spellcheck="false" placeholder="Type, paste, or tap the mic to dictate. Don't worry about mistakes."></textarea>
+          <textarea id="input" spellcheck="false" placeholder="Enter or paste your text here. Raw thoughts welcome — don't worry about mistakes."></textarea>
           <button class="mic" id="mic" type="button" hidden aria-label="Dictate with your voice" title="Dictate">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
             <span class="mic-pulse"></span>
@@ -93,7 +100,16 @@ const tones = [
         <div class="pane out">
           <div class="pane-top">
             <span class="pane-title">Clean</span>
-            <button class="link-btn" id="copy" type="button" hidden>Copy</button>
+            <div class="pane-tools">
+              <button class="tool-btn" id="diff" type="button" hidden aria-pressed="false" title="Show what changed">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 8l-3 4 3 4M19 8l3 4-3 4"/></svg>
+                <span>Changes</span>
+              </button>
+              <button class="tool-btn icon" id="copy" type="button" hidden aria-label="Copy to clipboard" title="Copy to clipboard">
+                <svg class="i-copy" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+                <svg class="i-check" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M5 12.5l4 4 10-10"/></svg>
+              </button>
+            </div>
           </div>
           <div id="output" class="output" aria-live="polite">
             <p class="ghost-text">Your refined text appears here.</p>
@@ -130,6 +146,8 @@ const tones = [
       const output = $('#output');
       const go = $('#go');
       const copyBtn = $('#copy');
+      const diffBtn = $('#diff');
+      const toneField = $('#tone-field');
       const count = $('#count');
       const historyEl = $('#history');
       const recentWrap = $('#recent-wrap');
@@ -137,6 +155,11 @@ const tones = [
       const KEY = 'clearwrite.history';
       let dialect = 'US';
       let tone = 'neutral';
+      let mode = 'polish';
+      // last refine, for the Copy button and the Changes (diff) view
+      let lastInput = '';
+      let lastResult = '';
+      let diffOn = false;
 
       // theme: light / dark / system
       const root = document.documentElement;
@@ -171,6 +194,15 @@ const tones = [
           tone = b.dataset.val;
         });
       });
+      document.querySelectorAll('#mode .pill').forEach((b) => {
+        b.addEventListener('click', () => applyMode(b.dataset.val));
+      });
+      // In Prompt-ready mode, tone is not meaningful — dim that control.
+      function applyMode(val) {
+        mode = val === 'prompt' ? 'prompt' : 'polish';
+        document.querySelectorAll('#mode .pill').forEach((x) => x.classList.toggle('active', x.dataset.val === mode));
+        toneField.classList.toggle('disabled', mode === 'prompt');
+      }
 
       const MAX = 12000;
       function setCount(n) {
@@ -227,30 +259,82 @@ const tones = [
         go.querySelector('.dots').hidden = !on;
       }
 
-      function showOutput(textVal) {
+      const escapeHtml = (s) =>
+        s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      // Word-level diff (LCS) so users can see exactly what was changed.
+      function diffWords(aStr, bStr) {
+        const a = aStr.trim().split(/\s+/).filter(Boolean);
+        const b = bStr.trim().split(/\s+/).filter(Boolean);
+        const n = a.length, m = b.length;
+        const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+        for (let i = n - 1; i >= 0; i--)
+          for (let j = m - 1; j >= 0; j--)
+            dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        const out = [];
+        let i = 0, j = 0;
+        while (i < n && j < m) {
+          if (a[i] === b[j]) { out.push(['eq', b[j]]); i++; j++; }
+          else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push(['del', a[i]]); i++; }
+          else { out.push(['add', b[j]]); j++; }
+        }
+        while (i < n) out.push(['del', a[i++]]);
+        while (j < m) out.push(['add', b[j++]]);
+        return out;
+      }
+
+      function renderDiffHtml(srcInput, result) {
+        return diffWords(srcInput, result)
+          .map(([t, w]) =>
+            t === 'eq' ? escapeHtml(w)
+            : t === 'add' ? '<ins>' + escapeHtml(w) + '</ins>'
+            : '<del>' + escapeHtml(w) + '</del>')
+          .join(' ');
+      }
+
+      function renderOutput() {
         output.innerHTML = '';
         const p = document.createElement('p');
         p.className = 'result';
-        p.textContent = textVal;
+        if (diffOn && lastInput) p.innerHTML = renderDiffHtml(lastInput, lastResult);
+        else p.textContent = lastResult;
         output.appendChild(p);
-        copyBtn.hidden = false;
       }
+
+      function showOutput(result, srcInput) {
+        lastResult = result;
+        lastInput = srcInput != null ? srcInput : '';
+        diffOn = false;
+        diffBtn.setAttribute('aria-pressed', 'false');
+        renderOutput();
+        copyBtn.hidden = false;
+        // Diff only makes sense for line edits, not the restructured prompt mode.
+        diffBtn.hidden = mode === 'prompt' || !lastInput;
+      }
+
+      diffBtn.addEventListener('click', () => {
+        diffOn = !diffOn;
+        diffBtn.classList.toggle('on', diffOn);
+        diffBtn.setAttribute('aria-pressed', String(diffOn));
+        renderOutput();
+      });
 
       async function refine() {
         const text = input.value.trim();
         if (!text) { input.focus(); return; }
         setBusy(true);
         copyBtn.hidden = true;
+        diffBtn.hidden = true;
         try {
           const res = await fetch('/api/rewrite', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, dialect, tone }),
+            body: JSON.stringify({ text, dialect, tone, mode }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Something went wrong.');
-          showOutput(data.result);
-          saveHistory({ input: text, output: data.result, dialect, tone, ts: Date.now() });
+          showOutput(data.result, text);
+          saveHistory({ input: text, output: data.result, dialect, tone, mode, ts: Date.now() });
         } catch (e) {
           output.innerHTML = '<p class="err">' + (e.message || 'Failed. Please try again.') + '</p>';
         } finally {
@@ -263,12 +347,14 @@ const tones = [
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') refine();
       });
 
+      const iCopy = copyBtn.querySelector('.i-copy');
+      const iCheck = copyBtn.querySelector('.i-check');
       copyBtn.addEventListener('click', async () => {
-        const t = output.querySelector('.result');
-        if (!t) return;
-        await navigator.clipboard.writeText(t.textContent);
-        copyBtn.textContent = 'Copied';
-        setTimeout(() => (copyBtn.textContent = 'Copy'), 1400);
+        if (!lastResult) return;
+        try { await navigator.clipboard.writeText(lastResult); } catch { return; }
+        iCopy.hidden = true; iCheck.hidden = false;
+        copyBtn.classList.add('done');
+        setTimeout(() => { iCopy.hidden = false; iCheck.hidden = true; copyBtn.classList.remove('done'); }, 1400);
       });
 
       function loadHistory() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
@@ -307,7 +393,8 @@ const tones = [
             setCount(it.input.length);
             applyDialect(it.dialect);
             applyTone(it.tone);
-            showOutput(it.output);
+            applyMode(it.mode || 'polish');
+            showOutput(it.output, it.input);
             window.scrollTo({ top: 0, behavior: 'smooth' });
           });
           historyEl.appendChild(card);
@@ -331,6 +418,7 @@ const tones = [
         --text-2: #524e47;
         --accent: #2f6b54;
         --accent-soft: #e7efe9;
+        --on-accent: #fffefb;
         --danger: #b1442f;
         --shadow: 0 1px 2px rgba(28,27,25,.04), 0 8px 24px rgba(28,27,25,.05);
       }
@@ -345,6 +433,7 @@ const tones = [
         --text-2: #c4beb3;
         --accent: #6dbb98;
         --accent-soft: #233029;
+        --on-accent: #181715;
         --danger: #e08568;
         --shadow: 0 1px 2px rgba(0,0,0,.2), 0 10px 28px rgba(0,0,0,.28);
       }
@@ -403,22 +492,17 @@ const tones = [
       .field { display: flex; flex-direction: column; gap: .5rem; }
       .field-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); font-weight: 500; }
 
-      .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line-2); border-radius: 10px; padding: 3px; box-shadow: var(--shadow); }
-      .seg-btn {
-        border: 0; background: transparent; color: var(--text-2); cursor: pointer;
-        font: inherit; font-size: .88rem; font-weight: 500; padding: .4rem 1rem; border-radius: 7px;
-        transition: color .15s, background .15s;
-      }
-      .seg-btn.active { background: var(--ink); color: var(--surface); }
-
-      .pills { display: flex; flex-wrap: wrap; gap: .4rem; }
-      .pill {
+      /* Language and Tone share one pill treatment for visual harmony. */
+      .seg, .pills { display: flex; flex-wrap: wrap; gap: .4rem; }
+      .seg-btn, .pill {
         border: 1px solid var(--line-2); background: var(--surface); color: var(--text-2);
         cursor: pointer; font: inherit; font-size: .86rem; font-weight: 500; padding: .42rem .9rem; border-radius: 999px;
         transition: all .15s;
       }
-      .pill:hover { border-color: var(--muted); color: var(--ink); }
-      .pill.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
+      .seg-btn:hover, .pill:hover { border-color: var(--muted); color: var(--ink); }
+      .seg-btn.active, .pill.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+      .field.disabled { opacity: .4; pointer-events: none; }
 
       .editor { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
       @media (max-width: 740px) { .editor { grid-template-columns: 1fr; } }
@@ -433,7 +517,7 @@ const tones = [
         padding: .85rem 1.1rem; border-bottom: 1px solid var(--line);
       }
       .pane-title { font-size: .74rem; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); font-weight: 500; }
-      .count { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+      .count { font-size: .78rem; color: var(--text-2); font-weight: 500; font-variant-numeric: tabular-nums; }
       .count.over { color: var(--danger); font-weight: 500; }
       .mic {
         position: absolute; bottom: .9rem; right: .9rem; z-index: 2;
@@ -477,11 +561,11 @@ const tones = [
       .reset:hover { color: var(--ink); }
       .run {
         display: inline-flex; align-items: center; gap: .55rem;
-        background: var(--ink); color: var(--surface); border: 0; border-radius: 11px;
-        padding: .7rem 1.6rem; cursor: pointer; font: inherit; font-size: .95rem; font-weight: 500;
-        transition: transform .12s, opacity .12s; box-shadow: var(--shadow);
+        background: var(--accent); color: var(--on-accent); border: 0; border-radius: 11px;
+        padding: .7rem 1.7rem; cursor: pointer; font: inherit; font-size: .95rem; font-weight: 600;
+        transition: transform .12s, opacity .12s, filter .12s; box-shadow: var(--shadow);
       }
-      .run:hover { transform: translateY(-1px); }
+      .run:hover { transform: translateY(-1px); filter: brightness(1.05); }
       .run:disabled { cursor: default; opacity: .85; transform: none; }
       .dots { display: inline-flex; gap: 3px; }
       .dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .4; animation: blink 1.2s infinite ease-in-out; }
@@ -492,6 +576,28 @@ const tones = [
       .link-btn { background: transparent; border: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: .82rem; font-weight: 500; padding: 0; }
       .link-btn:hover { text-decoration: underline; }
       .link-btn.subtle { color: var(--muted); }
+
+      /* Clean-pane tools: Changes (diff) toggle + Copy icon */
+      .pane-tools { display: inline-flex; align-items: center; gap: .25rem; }
+      .tool-btn {
+        display: inline-flex; align-items: center; gap: .3rem;
+        background: transparent; border: 0; color: var(--muted); cursor: pointer;
+        font: inherit; font-size: .76rem; font-weight: 500; padding: .28rem .5rem; border-radius: 7px;
+        transition: color .15s, background .15s;
+      }
+      .tool-btn svg { display: block; }
+      .tool-btn.icon { padding: .3rem; }
+      .tool-btn:hover { color: var(--ink); background: var(--accent-soft); }
+      .tool-btn.on { color: var(--accent); background: var(--accent-soft); }
+      .tool-btn.done { color: var(--accent); }
+
+      /* Diff highlighting in the Clean output */
+      .result ins {
+        text-decoration: none; background: var(--accent-soft); color: var(--accent);
+        border-radius: 3px; padding: 0 .14em;
+        -webkit-box-decoration-break: clone; box-decoration-break: clone;
+      }
+      .result del { text-decoration: line-through; color: var(--faint); }
 
       .recent { margin-top: 3rem; }
       .recent-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1rem; }

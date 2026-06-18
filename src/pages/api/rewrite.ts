@@ -20,23 +20,40 @@ const TONES: Record<string, string> = {
   confident: 'direct and confident, assertive without being aggressive',
 };
 
+function langName(lang: string): string {
+  return lang === 'UK' ? 'British (UK) English' : lang === 'FR' ? 'French' : 'American (US) English';
+}
+
 function buildSystemPrompt(lang: string, tone: string): string {
-  const langName =
-    lang === 'UK' ? 'British (UK) English' : lang === 'FR' ? 'French' : 'American (US) English';
+  const name = langName(lang);
   const conventions =
     lang === 'FR'
       ? 'Use standard French spelling, grammar, accents and punctuation conventions throughout.'
-      : `Use ${langName} spelling and conventions throughout.`;
+      : `Use ${name} spelling and conventions throughout.`;
   const toneDesc = TONES[tone] ?? TONES.neutral;
   return [
-    `You are an expert editor. Rewrite the user's text into perfect, natural ${langName}.`,
+    `You are an expert editor. Rewrite the user's text into perfect, natural ${name}.`,
     `Fix all grammar, spelling, punctuation, word choice and phrasing mistakes.`,
     conventions,
     `Make the tone ${toneDesc}.`,
     `Keep the original meaning and all facts exactly. Do not add new ideas or remove information.`,
-    `If the input is written in a different language, translate it accurately into ${langName}.`,
+    `If the input is written in a different language, translate it accurately into ${name}.`,
     `Match the length roughly — do not pad or over-shorten.`,
     `Output ONLY the rewritten text. No preamble, no quotes, no explanations, no notes.`,
+  ].join(' ');
+}
+
+// "Prompt-ready" mode: restructure rough notes into a clean LLM prompt.
+function buildPromptSystem(lang: string): string {
+  const name = langName(lang);
+  return [
+    `You are a prompt engineer. Turn the user's rough notes into a single, clear prompt that is ready to paste into an AI assistant.`,
+    `Structure the output under these labels, each on its own line: "Context:", "Task:", "Constraints:".`,
+    `Under Context, give the background the AI needs. Under Task, state plainly what the AI should do. Under Constraints, list any requirements, format, tone or limits as short lines starting with "- ".`,
+    `Omit a section only if the notes truly contain nothing for it.`,
+    `Preserve every fact and instruction the user gave. Do not invent requirements or add new scope.`,
+    `Write in ${name}.`,
+    `Output ONLY the structured prompt. No preamble, no explanation, no surrounding quotes or code fences.`,
   ].join(' ');
 }
 
@@ -51,6 +68,7 @@ export const POST: APIRoute = async ({ request }) => {
   const text = (body?.text ?? '').toString();
   const dialect = ['UK', 'FR'].includes(body?.dialect) ? body.dialect : 'US';
   const tone = (body?.tone ?? 'neutral').toString().toLowerCase();
+  const mode = body?.mode === 'prompt' ? 'prompt' : 'polish';
 
   if (!text.trim()) return json({ error: 'Please enter some text to polish.' }, 400);
   if (text.length > 12000) return json({ error: 'Text is too long (max ~12,000 characters).' }, 400);
@@ -58,7 +76,7 @@ export const POST: APIRoute = async ({ request }) => {
   const apiKey = process.env.OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY;
   if (!apiKey) return json({ error: 'Server is missing OPENROUTER_API_KEY.' }, 500);
 
-  const system = buildSystemPrompt(dialect, tone);
+  const system = mode === 'prompt' ? buildPromptSystem(dialect) : buildSystemPrompt(dialect, tone);
 
   let lastErr = 'Unknown error';
   for (const model of MODELS) {
