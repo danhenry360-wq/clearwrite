@@ -15,7 +15,7 @@ const tones = [
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ClearWrite</title>
-    <meta name="description" content="Turn rough notes into clean, correct English. Choose UK or US and the tone that fits." />
+    <meta name="description" content="Turn rough or non-native English into clear, correct writing — or restructure your notes into a well-specified AI prompt. Built for writing better prompts in perfect English." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='28' height='28' rx='9' fill='%231c1b19'/><path d='M8.5 13 q2.1 -2.8 4.2 0 t4.2 0 t4.2 0' fill='none' stroke='%23f4f2ec' stroke-width='2' stroke-linecap='round' opacity='0.7'/><path d='M8.5 20.5 H23' fill='none' stroke='%233f8e6f' stroke-width='2.4' stroke-linecap='round'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -29,7 +29,7 @@ const tones = [
       })();
     </script>
   </head>
-  <body>
+  <body data-mode="polish">
     <header class="site">
       <a class="brand" href="/" aria-label="ClearWrite home">
         <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -55,10 +55,17 @@ const tones = [
     <main class="wrap">
       <section class="intro">
         <h1>Say exactly what you mean.</h1>
-        <p>Paste rough text. Get it back clear, correct and natural — in the language and tone you choose.</p>
+        <p>Paste rough or imperfect English — get it back clear and correct, or restructured into a precise, ready-to-use AI prompt.</p>
       </section>
 
-      <section class="bar">
+      <section class="bar" data-mode="polish">
+        <div class="field">
+          <span class="field-label">Mode</span>
+          <div class="pills" id="mode" role="group" aria-label="Mode">
+            <button type="button" class="pill active" data-val="polish">Polish</button>
+            <button type="button" class="pill" data-val="prompt">Prompt-ready</button>
+          </div>
+        </div>
         <div class="field">
           <span class="field-label">Language</span>
           <div class="seg" id="dialect" role="group" aria-label="Target language">
@@ -67,7 +74,7 @@ const tones = [
             <button type="button" class="seg-btn" data-val="FR">Français</button>
           </div>
         </div>
-        <div class="field" id="tone-field">
+        <div class="field polish-only" id="tone-field">
           <span class="field-label">Tone</span>
           <div class="pills" id="tone" role="group" aria-label="Tone">
             {tones.map((t, i) => (
@@ -75,14 +82,31 @@ const tones = [
             ))}
           </div>
         </div>
-        <div class="field">
-          <span class="field-label">Mode</span>
-          <div class="pills" id="mode" role="group" aria-label="Mode">
-            <button type="button" class="pill active" data-val="polish">Polish</button>
-            <button type="button" class="pill" data-val="prompt">Prompt-ready</button>
+        <div class="field prompt-only">
+          <span class="field-label">Output format</span>
+          <div class="pills" id="format" role="group" aria-label="Desired output format">
+            <button type="button" class="pill active" data-val="auto">Auto</button>
+            <button type="button" class="pill" data-val="prose">Prose</button>
+            <button type="button" class="pill" data-val="bulleted">Bulleted</button>
+            <button type="button" class="pill" data-val="steps">Steps</button>
+            <button type="button" class="pill" data-val="table">Table</button>
+          </div>
+        </div>
+        <div class="field prompt-only">
+          <span class="field-label">Detail</span>
+          <div class="pills" id="detail" role="group" aria-label="Level of detail">
+            <button type="button" class="pill" data-val="brief">Brief</button>
+            <button type="button" class="pill active" data-val="standard">Standard</button>
+            <button type="button" class="pill" data-val="detailed">Detailed</button>
           </div>
         </div>
       </section>
+
+      <div class="mode-extra">
+        <p class="mode-hint" id="mode-hint"></p>
+        <input id="role" class="role-input prompt-only" type="text" maxlength="200"
+          placeholder="Optional role for the AI — e.g. act as a senior copy editor" aria-label="Optional role for the AI" />
+      </div>
 
       <section class="editor">
         <div class="pane">
@@ -142,20 +166,28 @@ const tones = [
 
     <script>
       const $ = (s) => document.querySelector(s);
+      document.body.dataset.mode = 'polish';
       const input = $('#input');
       const output = $('#output');
       const go = $('#go');
       const copyBtn = $('#copy');
       const diffBtn = $('#diff');
-      const toneField = $('#tone-field');
+      const modeHint = $('#mode-hint');
+      const roleInput = $('#role');
       const count = $('#count');
       const historyEl = $('#history');
       const recentWrap = $('#recent-wrap');
       const clearHistoryBtn = $('#clear-history');
       const KEY = 'clearwrite.history';
+      const HINTS = {
+        polish: 'Fixes grammar, spelling and phrasing, then rewrites in natural English.',
+        prompt: 'Restructures your notes into a clear, well-specified prompt — ready to paste into any AI.',
+      };
       let dialect = 'US';
       let tone = 'neutral';
       let mode = 'polish';
+      let format = 'auto';
+      let detail = 'standard';
       // last refine, for the Copy button and the Changes (diff) view
       let lastInput = '';
       let lastResult = '';
@@ -194,15 +226,40 @@ const tones = [
           tone = b.dataset.val;
         });
       });
+      // Generic single-select pill group → sets a variable.
+      function pillGroup(sel, set) {
+        document.querySelectorAll(sel + ' .pill').forEach((b) => {
+          b.addEventListener('click', () => {
+            document.querySelectorAll(sel + ' .pill').forEach((x) => x.classList.remove('active'));
+            b.classList.add('active');
+            set(b.dataset.val);
+          });
+        });
+      }
+      pillGroup('#format', (v) => (format = v));
+      pillGroup('#detail', (v) => (detail = v));
+
       document.querySelectorAll('#mode .pill').forEach((b) => {
         b.addEventListener('click', () => applyMode(b.dataset.val));
       });
-      // In Prompt-ready mode, tone is not meaningful — dim that control.
+      // Prompt-ready morphs the control panel: Tone (writing voice) gives way to
+      // Output format / Detail / Role (what you want the AI to produce).
       function applyMode(val) {
         mode = val === 'prompt' ? 'prompt' : 'polish';
         document.querySelectorAll('#mode .pill').forEach((x) => x.classList.toggle('active', x.dataset.val === mode));
-        toneField.classList.toggle('disabled', mode === 'prompt');
+        document.body.dataset.mode = mode;
+        modeHint.textContent = HINTS[mode];
+        if (lastResult) diffBtn.hidden = mode === 'prompt' || !lastInput;
       }
+      function applyFormat(v) {
+        format = ['prose', 'bulleted', 'steps', 'table'].includes(v) ? v : 'auto';
+        document.querySelectorAll('#format .pill').forEach((x) => x.classList.toggle('active', x.dataset.val === format));
+      }
+      function applyDetail(v) {
+        detail = ['brief', 'detailed'].includes(v) ? v : 'standard';
+        document.querySelectorAll('#detail .pill').forEach((x) => x.classList.toggle('active', x.dataset.val === detail));
+      }
+      modeHint.textContent = HINTS.polish;
 
       const MAX = 12000;
       function setCount(n) {
@@ -326,15 +383,16 @@ const tones = [
         copyBtn.hidden = true;
         diffBtn.hidden = true;
         try {
+          const role = roleInput.value.trim();
           const res = await fetch('/api/rewrite', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, dialect, tone, mode }),
+            body: JSON.stringify({ text, dialect, tone, mode, format, detail, role }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Something went wrong.');
           showOutput(data.result, text);
-          saveHistory({ input: text, output: data.result, dialect, tone, mode, ts: Date.now() });
+          saveHistory({ input: text, output: data.result, dialect, tone, mode, format, detail, role, ts: Date.now() });
         } catch (e) {
           output.innerHTML = '<p class="err">' + (e.message || 'Failed. Please try again.') + '</p>';
         } finally {
@@ -382,8 +440,9 @@ const tones = [
           card.type = 'button';
           const tag = document.createElement('div');
           tag.className = 'rec-tags';
+          const secondary = it.mode === 'prompt' ? 'prompt' : (it.tone || 'neutral');
           tag.innerHTML = '<span class="tag">' + it.dialect + '</span><span class="tag soft">' +
-            it.tone + '</span><span class="rec-time">' + new Date(it.ts).toLocaleDateString(undefined,{month:'short',day:'numeric'}) + '</span>';
+            secondary + '</span><span class="rec-time">' + new Date(it.ts).toLocaleDateString(undefined,{month:'short',day:'numeric'}) + '</span>';
           const body = document.createElement('div');
           body.className = 'rec-body';
           body.textContent = it.output;
@@ -393,6 +452,9 @@ const tones = [
             setCount(it.input.length);
             applyDialect(it.dialect);
             applyTone(it.tone);
+            applyFormat(it.format || 'auto');
+            applyDetail(it.detail || 'standard');
+            roleInput.value = it.role || '';
             applyMode(it.mode || 'polish');
             showOutput(it.output, it.input);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -488,9 +550,23 @@ const tones = [
       }
       .intro p { margin: 0; color: var(--muted); font-size: 1.02rem; max-width: 30em; }
 
-      .bar { display: flex; flex-wrap: wrap; gap: 1.6rem 2.4rem; margin-bottom: 1.4rem; }
+      .bar { display: flex; flex-wrap: wrap; gap: 1.6rem 2.4rem; margin-bottom: 1rem; }
       .field { display: flex; flex-direction: column; gap: .5rem; }
       .field-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); font-weight: 500; }
+
+      /* Control panel morphs by mode: Tone for Polish, Format/Detail/Role for Prompt-ready */
+      body[data-mode="polish"] .prompt-only { display: none !important; }
+      body[data-mode="prompt"] .polish-only { display: none !important; }
+      .mode-extra { display: flex; flex-direction: column; gap: .7rem; margin-bottom: 1.4rem; }
+      .mode-hint { margin: 0; color: var(--muted); font-size: .9rem; }
+      .role-input {
+        width: 100%; max-width: 520px; background: var(--surface); color: var(--ink);
+        border: 1px solid var(--line-2); border-radius: 10px; padding: .6rem .85rem;
+        font: inherit; font-size: .92rem; box-shadow: var(--shadow);
+        transition: border-color .15s;
+      }
+      .role-input::placeholder { color: var(--faint); }
+      .role-input:focus { outline: none; border-color: var(--accent); }
 
       /* Language and Tone share one pill treatment for visual harmony. */
       .seg, .pills { display: flex; flex-wrap: wrap; gap: .4rem; }
