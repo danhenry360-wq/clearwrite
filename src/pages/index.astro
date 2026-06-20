@@ -142,11 +142,11 @@ const tones = [
       </section>
 
       <div class="actions">
-        <button class="reset" id="clear" type="button">Clear</button>
         <button class="run" id="go" type="button">
           <span class="run-text">Refine</span>
           <span class="dots" hidden><i></i><i></i><i></i></span>
         </button>
+        <button class="reset" id="clear" type="button">Clear</button>
       </div>
 
       <section class="recent" id="recent-wrap" hidden>
@@ -629,7 +629,7 @@ const tones = [
       .ghost-text { margin: 0; color: var(--faint); font-family: 'Newsreader', Georgia, serif; font-size: 1.18rem; font-style: italic; }
       .err { margin: 0; color: var(--danger); }
 
-      .actions { display: flex; align-items: center; justify-content: flex-end; gap: .8rem; margin-top: 1.2rem; }
+      .actions { display: flex; align-items: center; justify-content: flex-start; gap: .8rem; margin-top: 1.2rem; }
       .reset {
         background: transparent; border: 0; color: var(--muted); cursor: pointer;
         font: inherit; font-size: .9rem; padding: .55rem .6rem;
